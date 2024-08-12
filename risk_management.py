@@ -18,6 +18,10 @@ class TradeConfig:
     take_profit: float
     direction: TradeDirection
 
+class RiskManagement:
+    def __init__(self):
+        self.logger = self.setup_logger()
+
 @dataclass
 class Trade:
     config: TradeConfig
