@@ -1,0 +1,279 @@
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
+import os
+from dotenv import load_dotenv
+import json
+from abc import ABC, abstractmethod
+import MetaTrader5 as mt5
+
+load_dotenv()
+
+class ConfigurationError(Exception):
+    """Custom exception for configuration-related errors."""
+    pass
+
+class BaseConfig(ABC):
+    @abstractmethod
+    def validate(self):
+        pass
+
+@dataclass
+class MT5ConnectionConfig(BaseConfig):
+    account: int = field(default_factory=lambda: int(os.getenv('MT5_ACCOUNT', '0')))
+    password: str = field(default_factory=lambda: os.getenv('MT5_PASSWORD', ''))
+    server: str = field(default_factory=lambda: os.getenv('MT5_SERVER', ''))
+    timeout: int = 60000
+    path: str = ""
+
+    def validate(self):
+        assert self.account > 0, "MT5 account number must be positive"
+        assert self.password, "MT5 password must not be empty"
+        assert self.server, "MT5 server must not be empty"
+        assert self.timeout > 0, "Timeout must be positive"
+
+@dataclass
+class SymbolConfig(BaseConfig):
+    name: str
+    timeframes: List[str]
+    chart_timeframe: str
+    max_spread: float
+    swap_long: float
+    swap_short: float
+    margin_rate: float
+
+    def validate(self):
+        assert self.name, "Symbol name must not be empty"
+        assert len(self.timeframes) > 0, "At least one timeframe must be specified"
+        assert self.chart_timeframe in self.timeframes, "Chart timeframe must be in the list of timeframes"
+        assert self.max_spread >= 0, "Max spread must be non-negative"
+        assert self.margin_rate > 0, "Margin rate must be positive"
+
+@dataclass
+class TradingConfig(BaseConfig):
+    symbols: List[SymbolConfig] = field(default_factory=list)
+    default_volume: float = 0.01
+    default_deviation: int = 20
+    magic_number: int = 123456
+    trading_hours: Dict[str, List[str]] = field(default_factory=lambda: {
+        "Monday": ["00:00-23:59"],
+        "Tuesday": ["00:00-23:59"],
+        "Wednesday": ["00:00-23:59"],
+        "Thursday": ["00:00-23:59"],
+        "Friday": ["00:00-23:59"]
+    })
+
+    def validate(self):
+        assert len(self.symbols) > 0, "At least one symbol must be specified"
+        assert self.default_volume > 0, "Default volume must be positive"
+        assert self.default_deviation >= 0, "Default deviation must be non-negative"
+        assert self.magic_number > 0, "Magic number must be positive"
+        for day, hours in self.trading_hours.items():
+            assert day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], f"Invalid day: {day}"
+            for time_range in hours:
+                assert '-' in time_range, f"Invalid time range format: {time_range}"
+                start, end = time_range.split('-')
+                assert self.is_valid_time(start) and self.is_valid_time(end), f"Invalid time in range: {time_range}"
+
+    @staticmethod
+    def is_valid_time(time_str):
+        try:
+            hours, minutes = map(int, time_str.split(':'))
+            return 0 <= hours < 24 and 0 <= minutes < 60
+        except ValueError:
+            return False
+
+@dataclass
+class RiskManagementConfig(BaseConfig):
+    max_positions: int = 5
+    max_daily_loss: float = 100.0
+    max_daily_profit: float = 500.0
+    max_equity_risk_percent: float = 2.0
+    default_stop_loss_pips: int = 50
+    default_take_profit_pips: int = 100
+    use_trailing_stop: bool = True
+    trailing_stop_pips: int = 30
+
+    def validate(self):
+        assert self.max_positions > 0, "Max positions must be positive"
+        assert self.max_daily_loss > 0, "Max daily loss must be positive"
+        assert self.max_daily_profit > 0, "Max daily profit must be positive"
+        assert 0 < self.max_equity_risk_percent <= 100, "Max equity risk percent must be between 0 and 100"
+        assert self.default_stop_loss_pips > 0, "Default stop loss pips must be positive"
+        assert self.default_take_profit_pips > 0, "Default take profit pips must be positive"
+        assert self.trailing_stop_pips > 0, "Trailing stop pips must be positive"
+
+@dataclass
+class SignalConfig(BaseConfig):
+    rsi_period: int = 14
+    rsi_overbought: int = 70
+    rsi_oversold: int = 30
+    ma_fast_period: int = 10
+    ma_slow_period: int = 20
+    macd_fast_period: int = 12
+    macd_slow_period: int = 26
+    macd_signal_period: int = 9
+    atr_period: int = 14
+
+    def validate(self):
+        assert self.rsi_period > 0, "RSI period must be positive"
+        assert 0 < self.rsi_oversold < self.rsi_overbought < 100, "Invalid RSI overbought/oversold levels"
+        assert 0 < self.ma_fast_period < self.ma_slow_period, "MA fast period must be less than slow period"
+        assert self.macd_fast_period > 0, "MACD fast period must be positive"
+        assert self.macd_slow_period > self.macd_fast_period, "MACD slow period must be greater than fast period"
+        assert self.macd_signal_period > 0, "MACD signal period must be positive"
+        assert self.atr_period > 0, "ATR period must be positive"
+
+@dataclass
+class LoggingConfig(BaseConfig):
+    level: str = "INFO"
+    file_path: str = "mt5_trading_bot.log"
+    max_file_size: int = 10 * 1024 * 1024  # 10 MB
+    backup_count: int = 5
+
+    def validate(self):
+        assert self.level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "Invalid logging level"
+        assert self.max_file_size > 0, "Max file size must be positive"
+        assert self.backup_count >= 0, "Backup count must be non-negative"
+
+@dataclass
+class MT5Config:
+    connection: MT5ConnectionConfig = field(default_factory=MT5ConnectionConfig)
+    trading: TradingConfig = field(default_factory=TradingConfig)
+    risk_management: RiskManagementConfig = field(default_factory=RiskManagementConfig)
+    signal: SignalConfig = field(default_factory=SignalConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+    def __post_init__(self):
+        self.validate()
+
+    def validate(self):
+        try:
+            self.connection.validate()
+            self.trading.validate()
+            self.risk_management.validate()
+            self.signal.validate()
+            self.logging.validate()
+        except AssertionError as e:
+            raise ConfigurationError(str(e))
+
+    def update_from_dict(self, config_dict: Dict[str, Any]):
+        for key, value in config_dict.items():
+            if hasattr(self, key):
+                if isinstance(getattr(self, key), BaseConfig):
+                    getattr(self, key).update_from_dict(value)
+                else:
+                    setattr(self, key, value)
+        self.validate()
+
+    def save_to_file(self, filename: str = 'mt5_config.json'):
+        try:
+            with open(filename, 'w') as f:
+                json.dump(self.__dict__, f, default=lambda o: o.__dict__, indent=4)
+        except IOError as e:
+            raise ConfigurationError(f"Error saving config to file: {e}")
+
+    @classmethod
+    def load_from_file(cls, filename: str = 'mt5_config.json'):
+        try:
+            with open(filename, 'r') as f:
+                config_dict = json.load(f)
+            config = cls()
+            config.update_from_dict(config_dict)
+            return config
+        except (IOError, json.JSONDecodeError) as e:
+            raise ConfigurationError(f"Error loading config from file: {e}")
+
+class MT5ConfigurationManager:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.config = MT5Config()
+        return cls._instance
+
+    def get_config(self) -> MT5Config:
+        return self.config
+
+    def update_config(self, config_dict: Dict[str, Any]):
+        self.config.update_from_dict(config_dict)
+
+    def save_config(self, filename: str = 'mt5_config.json'):
+        self.config.save_to_file(filename)
+
+    def load_config(self, filename: str = 'mt5_config.json'):
+        self.config = MT5Config.load_from_file(filename)
+
+    def apply_mt5_specific_settings(self):
+        # Apply MT5 specific settings
+        mt5.initialize(
+            login=self.config.connection.account,
+            server=self.config.connection.server,
+            password=self.config.connection.password,
+            timeout=self.config.connection.timeout,
+            path=self.config.connection.path
+        )
+
+        # Set symbol-specific parameters
+        for symbol_config in self.config.trading.symbols:
+            symbol_info = mt5.symbol_info(symbol_config.name)
+            if symbol_info is None:
+                print(f"Failed to get symbol info for {symbol_config.name}")
+                continue
+            
+            mt5.symbol_select(symbol_config.name, True)
+            
+            # Set custom symbol settings
+            mt5.symbol_info_set(symbol_config.name, {
+                mt5.SYMBOL_SPREAD_FLOAT: True,
+                mt5.SYMBOL_SPREAD_MAX: int(symbol_config.max_spread * 10),  # Convert to points
+                mt5.SYMBOL_SWAP_LONG: symbol_config.swap_long,
+                mt5.SYMBOL_SWAP_SHORT: symbol_config.swap_short,
+                mt5.SYMBOL_MARGIN_INITIAL: symbol_config.margin_rate,
+            })
+
+# Usage
+mt5_config_manager = MT5ConfigurationManager()
+
+def get_mt5_config() -> MT5Config:
+    return mt5_config_manager.get_config()
+
+def update_mt5_config(config_dict: Dict[str, Any]):
+    mt5_config_manager.update_config(config_dict)
+
+def apply_mt5_settings():
+    mt5_config_manager.apply_mt5_specific_settings()
+
+# Example usage
+if __name__ == "__main__":
+    config = get_mt5_config()
+    print(f"Current MT5 account: {config.connection.account}")
+    
+    # Update configuration
+    update_mt5_config({
+        "connection": {
+            "account": 12345678
+        },
+        "trading": {
+            "symbols": [
+                {
+                    "name": "EURUSD",
+                    "timeframes": ["M1", "M5", "H1"],
+                    "chart_timeframe": "M5",
+                    "max_spread": 1.5,
+                    "swap_long": -1.2,
+                    "swap_short": -0.8,
+                    "margin_rate": 0.05
+                }
+            ]
+        }
+    })
+    
+    # Save configuration to file
+    mt5_config_manager.save_config()
+    
+    # Apply MT5 specific settings
+    apply_mt5_settings()
+    
+    print(f"Updated MT5 account: {config.connection.account}")
+    print(f"EURUSD settings: {config.trading.symbols[0]}")
