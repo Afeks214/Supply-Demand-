@@ -1,0 +1,52 @@
+# MetaTrader5 API
+MetaTrader5==5.0.37
+
+# Data manipulation and analysis
+pandas==1.4.3
+numpy==1.23.1
+
+# Asynchronous programming
+asyncio==3.4.3
+
+# Date and time handling
+pytz==2022.1
+
+# Configuration management
+python-dotenv==0.20.0
+
+# Numerical and scientific computing
+scipy==1.8.1
+statsmodels==0.13.2
+
+# Machine learning (for MLMI)
+scikit-learn==1.1.1
+
+# Charting and visualization (optional, for development/debugging)
+matplotlib==3.5.2
+seaborn==0.11.2
+
+# Testing
+pytest==7.1.2
+pytest-asyncio==0.18.3
+
+# Linting and code quality
+flake8==4.0.1
+black==22.6.0
+
+# Type checking
+mypy==0.961
+
+# Logging (using built-in logging module)
+
+# Performance profiling (optional, for optimization)
+line_profiler==3.4.0
+
+# Documentation
+Sphinx==5.0.2
+
+# Dependency management
+pip-tools==6.8.0
+
+# Development tools
+ipython==8.4.0
+jupyter==1.0.0
