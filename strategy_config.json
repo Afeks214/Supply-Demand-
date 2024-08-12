@@ -1,0 +1,72 @@
+{
+    "connection": {
+        "account": 12345678,
+        "password": "your_password_here",
+        "server": "your_broker_server",
+        "timeout": 60000,
+        "path": "C:\\Program Files\\MetaTrader 5"
+    },
+    "trading": {
+        "symbols": [
+            {
+                "name": "EURUSD",
+                "timeframes": ["M1", "M5"],
+                "chart_timeframe": "M5",
+                "max_spread": 1.5,
+                "swap_long": -1.2,
+                "swap_short": -0.8,
+                "margin_rate": 0.05
+            },
+            {
+                "name": "GBPUSD",
+                "timeframes": ["M1", "M5"],
+                "chart_timeframe": "M5",
+                "max_spread": 1.8,
+                "swap_long": -1.5,
+                "swap_short": -1.0,
+                "margin_rate": 0.05
+            }
+        ],
+        "default_volume": 0.01,
+        "default_deviation": 20,
+        "magic_number": 123456,
+        "trading_hours": {
+            "Monday": ["00:00-23:59"],
+            "Tuesday": ["00:00-23:59"],
+            "Wednesday": ["00:00-23:59"],
+            "Thursday": ["00:00-23:59"],
+            "Friday": ["00:00-23:59"]
+        }
+    },
+    "risk_management": {
+        "max_positions": 5,
+        "max_daily_loss": 100.0,
+        "max_daily_profit": 500.0,
+        "max_equity_risk_percent": 2.0,
+        "default_stop_loss_pips": 50,
+        "default_take_profit_pips": 100,
+        "use_trailing_stop": true,
+        "trailing_stop_pips": 30
+    },
+    "signal": {
+        "rsi_period": 14,
+        "rsi_overbought": 70,
+        "rsi_oversold": 30,
+        "ma_fast_period": 10,
+        "ma_slow_period": 20,
+        "macd_fast_period": 12,
+        "macd_slow_period": 26,
+        "macd_signal_period": 9,
+        "atr_period": 14,
+        "mlmi_neighbors": 200,
+        "mlmi_momentum_window": 20,
+        "qr_window_size": 20,
+        "qr_degree": 2,
+        "fvg_threshold": 0.001
+    },
+    "logging": {
+        "level": "INFO",
+        "file_path": "mt5_trading_bot.log",
+        "max_file_size": 10485760,
+        "backup_count": 5
+    }
