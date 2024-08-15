@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
+from typing import Dict, Tuple, List
 
 class NadarayaWatsonRationalQuadratic:
-    def __init__(self, lookback_window=8.0, relative_weighting=8.0, start_bar=25, smooth_colors=False, lag=2):
+    def __init__(self, lookback_window: float = 8.0, relative_weighting: float = 8.0, 
+                 start_bar: int = 25, smooth_colors: bool = False, lag: int = 2):
         self.lookback_window = lookback_window
         self.relative_weighting = relative_weighting
         self.start_bar = start_bar
@@ -12,27 +14,23 @@ class NadarayaWatsonRationalQuadratic:
         self.c_bullish = '#3AFF17'  # Green
         self.c_bearish = '#FD1707'  # Red
 
-    def kernel_regression(self, source, h):
+    def kernel_regression(self, source: np.array, h: float) -> np.array:
         size = len(source)
         yhat = np.zeros(size)
         
-        for i in range(size):
-            if i < self.start_bar:
-                yhat[i] = np.nan
-            else:
-                current_weight = 0.0
-                cumulative_weight = 0.0
-                for j in range(i + 1):
-                    y = source[j]
-                    w = (1 + (j ** 2 / ((h ** 2) * 2 * self.relative_weighting))) ** -self.relative_weighting
-                    current_weight += y * w
-                    cumulative_weight += w
-                yhat[i] = current_weight / cumulative_weight
+        for i in range(self.start_bar, size):
+            current_weight = 0.0
+            cumulative_weight = 0.0
+            for j in range(i + 1):
+                y = source[j]
+                w = (1 + (j**2 / ((h**2) * 2 * self.relative_weighting)))**-self.relative_weighting
+                current_weight += y * w
+                cumulative_weight += w
+            yhat[i] = current_weight / cumulative_weight
         
         return yhat
 
-    def calculate(self, source):
-        source = np.array(source)
+    def calculate(self, source: np.array) -> Dict[str, np.array]:
         size = len(source)
         
         yhat1 = self.kernel_regression(source, self.lookback_window)
@@ -77,19 +75,19 @@ class NadarayaWatsonRationalQuadratic:
             'alert_stream': alert_stream
         }
 
-    def update(self, new_data):
+    def update(self, new_data: pd.Series) -> Dict[str, np.array]:
         """
         Update the indicator with new data.
         
-        :param new_data: New price data (can be a single value or an array)
+        :param new_data: New price data (can be a single value or a series)
         :return: Updated calculation results
         """
         if isinstance(new_data, (int, float)):
-            new_data = [new_data]
+            new_data = pd.Series([new_data])
         
-        return self.calculate(new_data)
+        return self.calculate(new_data.values)
 
-    def get_signals(self, results):
+    def get_signals(self, results: Dict[str, np.array]) -> Dict[str, any]:
         """
         Generate trading signals based on the indicator results.
         
