@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import List, Tuple
+from typing import Dict, List
 
 class MLMI:
     def __init__(self, num_neighbors: int = 200, momentum_window: int = 20):
