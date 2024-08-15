@@ -2,7 +2,6 @@ import numpy as np
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 from enum import Enum
-import time
 import logging
 import MetaTrader5 as mt5
 
@@ -17,10 +16,6 @@ class TradeConfig:
     stop_loss: float
     take_profit: float
     direction: TradeDirection
-
-class RiskManagement:
-    def __init__(self):
-        self.logger = self.setup_logger()
 
 @dataclass
 class Trade:
@@ -40,7 +35,6 @@ class RiskConfig:
     max_positions: int
     max_daily_loss: float
     max_drawdown: float
-    position_size_atr_multiplier: float
 
 class RiskManagement:
     def __init__(self, config: RiskConfig):
@@ -63,25 +57,34 @@ class RiskManagement:
         logger.addHandler(fh)
         return logger
 
-    def calculate_position_size(self, symbol: str, entry_price: float, stop_loss: float, atr: float) -> float:
+    def calculate_position_size(self, symbol: str, entry_price: float, stop_loss: float) -> float:
         risk_amount = self.current_capital * self.config.risk_per_trade
         risk_per_unit = abs(entry_price - stop_loss)
         
-        # Adjust position size based on ATR
-        atr_adjusted_risk = risk_per_unit * self.config.position_size_atr_multiplier
-        final_risk = max(risk_per_unit, atr_adjusted_risk)
-        
-        position_size = risk_amount / final_risk
-        
-        # Round down to the nearest lot size
+        # Get symbol information from MT5
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
             self.logger.error(f"Failed to get symbol info for {symbol}")
             return 0
-        lot_step = symbol_info.volume_step
-        position_size = (position_size // lot_step) * lot_step
         
-        return position_size
+        contract_size = symbol_info.trade_contract_size
+        tick_size = symbol_info.trade_tick_size
+        tick_value = symbol_info.trade_tick_value
+        
+        # Calculate position size in lots
+        position_size_units = risk_amount / (risk_per_unit * contract_size * (tick_value / tick_size))
+        
+        # Round to the nearest valid lot size
+        lot_step = symbol_info.volume_step
+        position_size_lots = round(position_size_units / lot_step) * lot_step
+        
+        # Ensure position size is within allowed limits
+        min_lot = symbol_info.volume_min
+        max_lot = symbol_info.volume_max
+        position_size_lots = max(min(position_size_lots, max_lot), min_lot)
+        
+        self.logger.info(f"Calculated position size for {symbol}: {position_size_lots} lots")
+        return position_size_lots
 
     def can_open_trade(self) -> bool:
         if self.daily_trades >= self.config.max_trades_per_day:
@@ -99,15 +102,14 @@ class RiskManagement:
             return False
         return True
 
-    def open_trade(self, trade_config: TradeConfig, atr: float) -> Optional[Trade]:
+    def open_trade(self, trade_config: TradeConfig) -> Optional[Trade]:
         if not self.can_open_trade():
             return None
 
         position_size = self.calculate_position_size(
             trade_config.symbol, 
             trade_config.entry_price, 
-            trade_config.stop_loss,
-            atr
+            trade_config.stop_loss
         )
         
         if position_size == 0:
@@ -117,7 +119,7 @@ class RiskManagement:
         trade = Trade(
             config=trade_config,
             position_size=position_size,
-            entry_time=time.time(),
+            entry_time=mt5.symbol_info_tick(trade_config.symbol).time,
             order_id=-1  # This will be updated when the order is actually placed
         )
         self.active_trades[trade_config.symbol] = trade
@@ -131,7 +133,7 @@ class RiskManagement:
             return None
 
         trade = self.active_trades.pop(symbol)
-        trade.exit_time = time.time()
+        trade.exit_time = mt5.symbol_info_tick(symbol).time
         trade.exit_price = exit_price
         trade.order_id = order_id
         
@@ -211,21 +213,6 @@ class RiskManagement:
             "max_drawdown": max_drawdown
         }
 
-    def adjust_risk_per_trade(self):
-        # Dynamically adjust risk per trade based on recent performance
-        recent_trades = self.closed_trades[-20:]  # Consider last 20 trades
-        if len(recent_trades) < 20:
-            return  # Not enough data to adjust
-
-        win_rate = sum(1 for trade in recent_trades if trade.pnl > 0) / len(recent_trades)
-        
-        if win_rate > 0.6:  # Increase risk if win rate is high
-            self.config.risk_per_trade = min(self.config.risk_per_trade * 1.1, 0.02)  # Cap at 2%
-        elif win_rate < 0.4:  # Decrease risk if win rate is low
-            self.config.risk_per_trade = max(self.config.risk_per_trade * 0.9, 0.005)  # Floor at 0.5%
-
-        self.logger.info(f"Adjusted risk per trade to {self.config.risk_per_trade}")
-
 # Example usage
 if __name__ == "__main__":
     risk_config = RiskConfig(
@@ -234,24 +221,20 @@ if __name__ == "__main__":
         max_trades_per_day=10,
         max_positions=5,
         max_daily_loss=1000,
-        max_drawdown=0.1,
-        position_size_atr_multiplier=1.5
+        max_drawdown=0.1
     )
     risk_manager = RiskManagement(risk_config)
 
-    # Simulate some trades
-    trade_config1 = TradeConfig("EURUSD", 1.1000, 1.0990, 1.1020, TradeDirection.LONG)
-    trade1 = risk_manager.open_trade(trade_config1, atr=0.0010)
+    # Example trade
+    trade_config = TradeConfig("EURUSD", 1.1000, 1.0990, 1.1020, TradeDirection.LONG)
+    trade = risk_manager.open_trade(trade_config)
+    if trade:
+        print(f"Opened trade: {trade}")
+        
+        # Simulate closing the trade
+        closed_trade = risk_manager.close_trade("EURUSD", 1.1015, 12345)
+        if closed_trade:
+            print(f"Closed trade: {closed_trade}")
     
-    trade_config2 = TradeConfig("GBPUSD", 1.3000, 1.2990, 1.3020, TradeDirection.LONG)
-    trade2 = risk_manager.open_trade(trade_config2, atr=0.0012)
-
-    # Close trades
-    risk_manager.close_trade("EURUSD", 1.1015, order_id=1)
-    risk_manager.close_trade("GBPUSD", 1.2995, order_id=2)
-
     # Print performance metrics
     print(risk_manager.get_performance_metrics())
-
-    # Adjust risk
-    risk_manager.adjust_risk_per_trade()
